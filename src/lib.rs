@@ -39,107 +39,59 @@
 //! ```
 
 #![deny(missing_docs)]
-#![cfg_attr(feature="nightly", feature(libc))]
 
 #[macro_use]
 extern crate log;
-#[cfg(feature="nightly")]
-extern crate libc;
 
 use std::fs::{OpenOptions, File};
 use std::io::Write;
 use std::sync::Mutex;
-use std::env;
 
-use log::{Log, LogMetadata, LogRecord, LogLevel, MaxLogLevelFilter, LogLevelFilter, SetLoggerError};
+use log::{Log, Metadata, Record, Level, LevelFilter, SetLoggerError};
 
 /// Kernel logger implementation
 pub struct KernelLog {
     kmsg: Mutex<File>,
-    maxlevel: LogLevelFilter
+    maxlevel: LevelFilter
 }
 
 impl KernelLog {
     /// Create new kernel logger
     pub fn new() -> KernelLog {
-        KernelLog::with_level(LogLevelFilter::Trace)
+        KernelLog::with_level(LevelFilter::Info)
     }
 
     /// Create new kernel logger with error level filter
-    pub fn with_level(filter: LogLevelFilter) -> KernelLog {
+    pub fn with_level(filter: LevelFilter) -> KernelLog {
         KernelLog {
             kmsg: Mutex::new(OpenOptions::new().write(true).open("/dev/kmsg").unwrap()),
             maxlevel: filter
         }
     }
 
-    /// Setup new kernel logger for log framework
-    pub fn init(filter: MaxLogLevelFilter) -> Box<Log> {
-        let logger = KernelLog::new();
-        filter.set(logger.maxlevel);
-        Box::new(logger)
-    }
-
-    /// Setup new kernel logger with error level from `KERNLOG_LEVEL` environment variable
-    pub fn init_env(filter: MaxLogLevelFilter) -> Box<Log> {
-        match env::var("KERNLOG_LEVEL") {
-            Err(_) => KernelLog::init(filter),
-            Ok(s) => match s.parse() {
-                Ok(level) => KernelLog::init_level(level, filter),
-                Err(_) => KernelLog::init(filter)
-            }
-        }
-    }
-
-    /// Setup new kernel logger with error level filter
-    pub fn init_level(level: LogLevelFilter, filter: MaxLogLevelFilter) -> Box<Log> {
-        filter.set(level);
-        Box::new(KernelLog::with_level(level))
+    /// Setup kernel logger as a default logger
+    pub fn init() -> Result<(), SetLoggerError> {
+        log::set_boxed_logger(Box::new(KernelLog::new()))
+            .map(|()| log::set_max_level(LevelFilter::Info))
     }
 }
 
 impl Log for KernelLog {
-    fn enabled(&self, meta: &LogMetadata) -> bool {
+    fn enabled(&self, meta: &Metadata) -> bool {
         meta.level() <= self.maxlevel
     }
 
-    #[cfg(feature="nightly")]
-    fn log(&self, record: &LogRecord) {
-        if record.level() > self.maxlevel {
+    fn log(&self, record: &Record) {
+        if !self.enabled(record.metadata()) {
             return;
         }
 
         let level: u8 = match record.level() {
-            LogLevel::Error => 3,
-            LogLevel::Warn => 4,
-            LogLevel::Info => 5,
-            LogLevel::Debug => 6,
-            LogLevel::Trace => 7,
-        };
-
-        let mut buf = Vec::new();
-        writeln!(buf, "<{}>{}[{}]: {}", level, record.target(),
-                 unsafe { ::libc::funcs::posix88::unistd::getpid() },
-                 record.args()).unwrap();
-
-        if let Ok(mut kmsg) = self.kmsg.lock() {
-            let _ = kmsg.write(&buf);
-            let _ = kmsg.flush();
-        }
-    }
-
-    #[cfg(not(feature="nightly"))]
-    fn log(&self, record: &LogRecord) {
-        if record.level() > self.maxlevel {
-            return;
-        }
-
-        let level: u8 = match record.level() {
-            LogLevel::Error => 3,
-            LogLevel::Warn => 4,
-            LogLevel::Info => 5,
-            LogLevel::Debug => 6,
-            LogLevel::Trace => 7,
+            Level::Error => 3,
+            Level::Warn => 4,
+            Level::Info => 5,
+            Level::Debug => 6,
+            Level::Trace => 7,
         };
 
         let mut buf = Vec::new();
@@ -150,20 +102,21 @@ impl Log for KernelLog {
             let _ = kmsg.flush();
         }
     }
-}
 
-/// Setup kernel logger as a default logger
-pub fn init() -> Result<(), SetLoggerError> {
-    log::set_logger(KernelLog::init)
+    fn flush(&self) {
+        if let Ok(mut kmsg) = self.kmsg.lock() {
+            let _ = kmsg.flush();
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{KernelLog, init};
+    use super::{KernelLog};
 
     #[test]
     fn log_to_kernel() {
-        init().unwrap();
+        KernelLog::init().unwrap();
         debug!("hello, world!");
     }
 }

@@ -13,4 +13,4 @@ keywords = ["kmsg", "log", "logger", "kernel", "dmesg"]
 log = "*"
 
 [features]
-nightly = []
+#nightly = []
