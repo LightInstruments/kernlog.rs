@@ -69,11 +69,6 @@ impl KernelLog {
         }
     }
 
-    /// Setup kernel logger as a default logger
-    pub fn init() -> Result<(), SetLoggerError> {
-        log::set_boxed_logger(Box::new(KernelLog::new()))
-            .map(|()| log::set_max_level(LevelFilter::Info))
-    }
 }
 
 impl Log for KernelLog {
@@ -110,13 +105,26 @@ impl Log for KernelLog {
     }
 }
 
+/// Setup kernel logger as a default logger
+pub fn init() -> Result<(), SetLoggerError> {
+    init_with_level(Level::Trace)
+}
+
+/// init KernLog with level
+pub fn init_with_level(level: Level) -> Result<(), SetLoggerError> {
+    let logger = KernelLog::with_level(level.to_level_filter());
+    log::set_boxed_logger(Box::new(logger))?;
+    log::set_max_level(level.to_level_filter());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{KernelLog};
+    use super::{init};
 
     #[test]
     fn log_to_kernel() {
-        KernelLog::init().unwrap();
+        init().unwrap();
         debug!("hello, world!");
     }
 }
