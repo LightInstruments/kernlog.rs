@@ -125,6 +125,10 @@ mod tests {
     #[test]
     fn log_to_kernel() {
         init().unwrap();
+        trace!("trace.");
         debug!("hello, world!");
+        info!("info");
+        warn!("warn.");
+        error!("error.");
     }
 }
